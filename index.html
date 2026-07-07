@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="color-scheme" content="light dark" />
 <title>OneFile — your life in a file you own</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%233b6ea5'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%23fff'/%3E%3C/svg%3E" />
 <style>
   /* ---- OneFile: everything (structure, style, logic) lives in this one file ---- */
   :root{
@@ -90,14 +91,48 @@
   .hide{display:none !important}
   a.skip{position:absolute;left:-999px;top:0}
   a.skip:focus{left:8px;top:8px;background:var(--accent);color:var(--accent-ink);padding:8px 12px;border-radius:8px;z-index:99}
+
+  .lockbadge{cursor:pointer;font-weight:600;color:var(--ink)}
+  .lockbadge:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .lockscreen{position:fixed;inset:0;z-index:100;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+  .lockbox{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);
+    padding:26px 22px;max-width:400px;width:100%;text-align:center}
+  .lockbox h1{font-size:20px;margin:6px 0 4px}
+  .lockbox p{margin:0 0 4px}
+  .lockicon{font-size:34px;margin:6px 0}
+  .lockbox input{margin-top:10px;text-align:center}
+  .lockerr{color:var(--danger);font-size:13px;font-weight:600;min-height:18px;margin-top:8px}
 </style>
 </head>
 <body>
 <a href="#main" class="skip">Skip to content</a>
+
+<!-- LOCK SCREEN: shown only when the file is encrypted and not yet unlocked -->
+<div class="lockscreen hide" id="lockscreen">
+  <div class="lockbox">
+    <div class="logo" style="justify-content:center;margin-bottom:6px"><span class="dot"></span>OneFile</div>
+    <div class="lockicon" aria-hidden="true">🔒</div>
+    <h1 id="locktitle">This file is locked</h1>
+    <p class="muted" id="lockmsg">Enter your passphrase to unlock. It never leaves this device — there is no reset. If you forget it, the data stays sealed.</p>
+    <form id="lockform" autocomplete="off">
+      <input type="password" id="lockpass" placeholder="Passphrase" aria-label="Passphrase" autocomplete="current-password" />
+      <div class="row" id="lockconfirmrow" style="margin-top:8px" hidden>
+        <input type="password" id="lockpass2" placeholder="Confirm passphrase" aria-label="Confirm passphrase" autocomplete="new-password" />
+      </div>
+      <div class="lockerr" id="lockerr" role="alert"></div>
+      <button class="btn primary" id="lockbtn" type="submit" style="width:100%;margin-top:10px">Unlock</button>
+    </form>
+    <p class="muted" style="font-size:12px;margin:14px 0 0">Encrypted on-device with AES-256-GCM · your passphrase is never stored or sent anywhere.</p>
+  </div>
+</div>
+
 <div class="wrap">
   <header>
     <div class="logo"><span class="dot"></span>OneFile</div>
     <div class="tag">your life in a file you own</div>
+    <button class="badge lockbadge hide" id="lockbadge" title="This file is encrypted on-device. Click to lock now.">
+      <span aria-hidden="true">🔒</span><span>Encrypted</span>
+    </button>
     <div class="badge" title="OneFile makes zero network requests. Your data never leaves this device.">
       <span class="live" aria-hidden="true"></span><span id="netlabel">0 servers contacted</span>
     </div>
@@ -167,6 +202,16 @@
         </div>
       </div>
       <div class="card">
+        <h2>Lock · on-device encryption</h2>
+        <p class="muted" id="enc-status" style="margin-top:0">This file is <b>not locked</b>. Anyone who opens this browser can read it. Add a passphrase to encrypt everything with AES-256 — only someone with the passphrase can open it, here or from a sealed backup.</p>
+        <div class="grid2">
+          <button class="btn primary" id="enc-lock">🔒 Lock with a passphrase</button>
+          <button class="btn hide" id="enc-unlock">🔓 Remove passphrase</button>
+          <button class="btn hide" id="enc-sealed">📦 Export sealed (.onefile)</button>
+        </div>
+        <p class="muted" id="enc-warn" style="font-size:12.5px;margin:10px 0 0">There is no password reset. If you forget the passphrase, the data cannot be recovered — that's what makes it truly yours.</p>
+      </div>
+      <div class="card">
         <h2>What's inside</h2>
         <div class="stat"><span>Entries</span><b id="s-count">0</b></div>
         <div class="stat"><span>Threads (tags)</span><b id="s-tags">0</b></div>
@@ -197,15 +242,46 @@
   const $$ = s => Array.from(document.querySelectorAll(s));
 
   // ---------- state ----------
-  let state = load();
-  function load(){
-    try{ const raw = localStorage.getItem(KEY); if(raw) return JSON.parse(raw); }catch(e){ console.debug("load failed", e); }
-    return { created: Date.now(), entries: [] };
+  let state = { created: Date.now(), entries: [] };
+  let pendingEnv = null;                 // encrypted envelope awaiting unlock
+  const enc = { active:false, key:null, salt:null, iterations:250000 };
+  const CRYPTO_OK = !!(window.crypto && window.crypto.subtle);
+
+  function readRaw(){
+    try{ const raw=localStorage.getItem(KEY); return raw? JSON.parse(raw) : null; }
+    catch(e){ console.debug("read failed", e); return null; }
   }
+
   let saveTimer=null;
-  function persist(){
+  function persist(){                     // debounced; encrypts if a passphrase is set
     clearTimeout(saveTimer);
-    saveTimer=setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){ console.debug("persist failed",e); toast("⚠ Could not save (storage full?)"); } }, 120);
+    saveTimer=setTimeout(doPersist,120);
+  }
+  async function doPersist(){
+    try{
+      let payload;
+      if(enc.active && enc.key){ payload = JSON.stringify(await encryptState()); }
+      else { payload = JSON.stringify(state); }
+      localStorage.setItem(KEY, payload);
+    }catch(e){ console.debug("persist failed",e); toast("⚠ Could not save (storage full?)"); }
+  }
+
+  // ---------- crypto (Web Crypto: AES-256-GCM + PBKDF2-SHA256) ----------
+  function b64e(buf){ const u=new Uint8Array(buf); let s=""; for(let i=0;i<u.length;i++) s+=String.fromCharCode(u[i]); return btoa(s); }
+  function b64d(str){ const b=atob(str), u=new Uint8Array(b.length); for(let i=0;i<b.length;i++) u[i]=b.charCodeAt(i); return u; }
+  async function deriveKey(pass, salt, iterations){
+    const base=await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey({name:"PBKDF2", salt, iterations, hash:"SHA-256"},
+      base, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+  }
+  async function encryptState(){
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const ct=await crypto.subtle.encrypt({name:"AES-GCM", iv}, enc.key, new TextEncoder().encode(JSON.stringify(state)));
+    return { enc:true, v:1, app:"onefile", kdf:{salt:b64e(enc.salt), iterations:enc.iterations}, iv:b64e(iv), ct:b64e(ct) };
+  }
+  async function decryptEnv(env, key){
+    const pt=await crypto.subtle.decrypt({name:"AES-GCM", iv:b64d(env.iv)}, key, b64d(env.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
   }
 
   // ---------- helpers ----------
@@ -306,6 +382,10 @@
     r.onload=()=>{
       try{
         const data=JSON.parse(r.result);
+        if(data && data.enc===true && data.ct){        // sealed backup → ask for its passphrase
+          if(!CRYPTO_OK){ toast("⚠ Open over https/localhost to open a sealed backup"); return; }
+          importEnv=data; showLock("import"); return;
+        }
         if(!data||!Array.isArray(data.entries)) throw new Error("Not a OneFile backup");
         if(!confirm(`Restore ${data.entries.length} entries? This replaces what's here now.`)) return;
         state=data; persist(); renderAll(); toast("Restored");
@@ -317,6 +397,104 @@
     if(!confirm("Erase every entry on this device? Back up first if you want to keep anything. This cannot be undone.")) return;
     state={ created:Date.now(), entries:[] };
     persist(); renderAll(); toast("Everything erased");
+  }
+
+  // ---------- lock / encryption ----------
+  let lockMode=null;                 // 'unlock' | 'create' | 'import'
+  let importEnv=null;                // sealed envelope being imported
+  function showLock(mode, opts){
+    lockMode=mode; opts=opts||{};
+    const confirmRow=$("#lockconfirmrow");
+    $("#lockerr").textContent=""; $("#lockpass").value=""; $("#lockpass2").value="";
+    if(mode==="create"){
+      $("#locktitle").textContent="Set a passphrase";
+      $("#lockmsg").textContent="Choose a passphrase to encrypt this file. There is no reset — if you forget it, the data cannot be recovered. That's what makes it truly yours.";
+      $("#lockbtn").textContent="Encrypt & lock"; confirmRow.hidden=false;
+    }else if(mode==="import"){
+      $("#locktitle").textContent="Sealed backup";
+      $("#lockmsg").textContent="This backup is encrypted. Enter its passphrase to restore it.";
+      $("#lockbtn").textContent="Unlock & restore"; confirmRow.hidden=true;
+    }else{
+      $("#locktitle").textContent="This file is locked";
+      $("#lockmsg").textContent="Enter your passphrase to unlock. It never leaves this device — there is no reset.";
+      $("#lockbtn").textContent="Unlock"; confirmRow.hidden=true;
+    }
+    $("#lockscreen").classList.remove("hide");
+    setTimeout(()=>$("#lockpass").focus(),30);
+  }
+  function hideLock(){ $("#lockscreen").classList.add("hide"); lockMode=null; importEnv=null; }
+
+  async function handleLock(e){
+    e.preventDefault();
+    const pass=$("#lockpass").value;
+    const err=$("#lockerr"); err.textContent="";
+    if(!pass){ err.textContent="Enter a passphrase."; return; }
+    $("#lockbtn").disabled=true;
+    try{
+      if(lockMode==="create"){
+        if(pass.length<6){ err.textContent="Use at least 6 characters."; return; }
+        if(pass!==$("#lockpass2").value){ err.textContent="Passphrases don't match."; return; }
+        enc.salt=crypto.getRandomValues(new Uint8Array(16));
+        enc.iterations=250000;
+        enc.key=await deriveKey(pass, enc.salt, enc.iterations);
+        enc.active=true;
+        await doPersist(); hideLock(); updateEncUI(); toast("🔒 File encrypted");
+      }else if(lockMode==="import"){
+        const key=await deriveKey(pass, b64d(importEnv.kdf.salt), importEnv.kdf.iterations);
+        const data=await decryptEnv(importEnv, key);           // throws if wrong passphrase
+        if(!data || !Array.isArray(data.entries)) throw new Error("bad");
+        state=data; persist(); renderAll(); hideLock(); show("today"); toast("Restored from sealed backup");
+      }else{ // unlock
+        const key=await deriveKey(pass, b64d(pendingEnv.kdf.salt), pendingEnv.kdf.iterations);
+        const data=await decryptEnv(pendingEnv, key);          // throws if wrong passphrase
+        state=data; enc.active=true; enc.key=key;
+        enc.salt=b64d(pendingEnv.kdf.salt); enc.iterations=pendingEnv.kdf.iterations;
+        pendingEnv=null; renderAll(); updateEncUI(); hideLock(); toast("Unlocked");
+      }
+    }catch(err2){
+      console.debug("lock op failed", err2);
+      $("#lockerr").textContent = lockMode==="create" ? "Something went wrong. Try again." : "Wrong passphrase.";
+    }finally{ $("#lockbtn").disabled=false; }
+  }
+
+  function enableEncryption(){
+    if(!CRYPTO_OK){ toast("⚠ Open over https or localhost to use encryption"); return; }
+    if(enc.active){ toast("Already encrypted"); return; }
+    showLock("create");
+  }
+  function removeEncryption(){
+    if(!enc.active) return;
+    if(!confirm("Remove the passphrase? The file will be stored unencrypted on this device again.")) return;
+    enc.active=false; enc.key=null; enc.salt=null;
+    doPersist(); updateEncUI(); toast("Passphrase removed");
+  }
+  function lockNow(){
+    const env=readRaw();
+    if(!env || !env.enc){ toast("Nothing to lock"); return; }
+    pendingEnv=env; enc.key=null; enc.active=false;
+    state={ created:Date.now(), entries:[] };   // clear decrypted data from memory
+    renderAll(); showLock("unlock");
+  }
+  async function exportSealed(){
+    if(!enc.active || !enc.key){ toast("Add a passphrase first"); return; }
+    const env=await encryptState();
+    const blob=new Blob([JSON.stringify(env,null,2)],{type:"application/octet-stream"});
+    const url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url; a.download=`onefile-sealed-${stamp()}.onefile`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast("Sealed backup downloaded");
+  }
+
+  function updateEncUI(){
+    const on=enc.active;
+    $("#lockbadge").classList.toggle("hide", !on);
+    $("#enc-lock").classList.toggle("hide", on);
+    $("#enc-unlock").classList.toggle("hide", !on);
+    $("#enc-sealed").classList.toggle("hide", !on);
+    const st=$("#enc-status");
+    if(on){ st.innerHTML="This file is <b>encrypted</b> with AES-256. Only someone with your passphrase can open it — here or from a sealed backup."; }
+    else if(!CRYPTO_OK){ st.innerHTML="Encryption needs a secure context. Open this page over <b>https</b> or <b>localhost</b> to lock it with a passphrase."; $("#enc-lock").disabled=true; }
+    else{ st.innerHTML="This file is <b>not locked</b>. Anyone who opens this browser can read it. Add a passphrase to encrypt everything with AES-256."; }
   }
 
   // ---------- views ----------
@@ -345,8 +523,23 @@
   $("#importFile").addEventListener("change", e=>{ if(e.target.files[0]) importJSON(e.target.files[0]); e.target.value=""; });
   $("#print").addEventListener("click", ()=>window.print());
   $("#wipe").addEventListener("click", wipe);
+  $("#enc-lock").addEventListener("click", enableEncryption);
+  $("#enc-unlock").addEventListener("click", removeEncryption);
+  $("#enc-sealed").addEventListener("click", exportSealed);
+  $("#lockbadge").addEventListener("click", lockNow);
+  $("#lockform").addEventListener("submit", handleLock);
 
-  renderAll();
+  // ---------- boot ----------
+  const raw=readRaw();
+  if(raw && raw.enc===true && raw.ct){        // file is encrypted → require unlock before showing anything
+    pendingEnv=raw;
+    updateEncUI();
+    showLock("unlock");
+  }else{
+    if(raw && Array.isArray(raw.entries)) state=raw;
+    updateEncUI();
+    renderAll();
+  }
 })();
 </script>
 </body>

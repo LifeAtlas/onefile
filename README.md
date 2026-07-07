@@ -55,12 +55,18 @@ No server needed. To host it (like the link above), any static host works — Gi
 
 ## Roadmap
 
-- [ ] Optional on-device encryption (passphrase unlock)
-- [ ] Encrypted export (`.onefile` sealed backup)
+- [x] Optional on-device encryption — passphrase-locked with **AES-256-GCM + PBKDF2** (250k iterations). No reset, no backdoor: if you forget it, the data stays sealed.
+- [x] Encrypted export — sealed `.onefile` backup you can carry between devices and open only with the passphrase.
 - [ ] Daily/weekly reflection prompts
 - [ ] Simple charts for health metrics (still 100% offline)
 - [ ] Import from plain markdown / CSV
 - [ ] PWA install ("Add to Home Screen") so it feels like a native app — still no server
+
+### Security notes
+
+- Encryption uses the browser's built-in [Web Crypto API](https://developer.mozilla.org/docs/Web/API/Web_Crypto_API) — no third-party crypto libraries.
+- Your passphrase is **never stored and never transmitted**; it only derives a key in memory while the file is open.
+- Encryption requires a secure context (https or localhost). Over `file://`, some browsers disable Web Crypto — the app tells you and stays unencrypted rather than pretending.
 
 ---
 
