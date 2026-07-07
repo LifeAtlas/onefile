@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="color-scheme" content="light dark" />
+<title>OneFile — your life in a file you own</title>
+<style>
+  /* ---- OneFile: everything (structure, style, logic) lives in this one file ---- */
+  :root{
+    --bg:#faf9f7; --panel:#ffffff; --ink:#1a1a1a; --muted:#6b6b6b;
+    --line:#e7e4df; --accent:#3b6ea5; --accent-ink:#fff;
+    --good:#2f7d4f; --danger:#b23b3b; --chip:#f0ede8;
+    --radius:14px; --shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#14151a; --panel:#1c1e25; --ink:#ecebe8; --muted:#9a9a9a;
+      --line:#2b2e37; --accent:#6ea3d8; --accent-ink:#0d1013; --chip:#252832;
+      --shadow:0 1px 3px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  }
+  a{color:var(--accent)}
+  .wrap{max-width:720px;margin:0 auto;padding:0 16px 96px}
+  header{display:flex;align-items:center;gap:12px;padding:20px 0 8px;flex-wrap:wrap}
+  .logo{font-weight:800;font-size:22px;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
+  .logo .dot{width:12px;height:12px;border-radius:50%;background:var(--accent)}
+  .tag{color:var(--muted);font-size:13px}
+  /* Sovereignty badge — the whole point, made visible */
+  .badge{margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--chip);
+    border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600}
+  .badge .live{width:8px;height:8px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(47,125,79,.5);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(47,125,79,.45)}70%{box-shadow:0 0 0 7px rgba(47,125,79,0)}100%{box-shadow:0 0 0 0 rgba(47,125,79,0)}}
+  @media (prefers-reduced-motion:reduce){.badge .live{animation:none}}
+
+  nav{display:flex;gap:6px;margin:14px 0 18px;background:var(--panel);border:1px solid var(--line);
+    border-radius:999px;padding:5px;box-shadow:var(--shadow);overflow-x:auto}
+  nav button{flex:1 0 auto;border:0;background:transparent;color:var(--muted);font-weight:600;font-size:14px;
+    padding:9px 14px;border-radius:999px;cursor:pointer;white-space:nowrap}
+  nav button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+  nav button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px;margin:0 0 14px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px}
+  textarea,input,select{width:100%;font:inherit;color:var(--ink);background:var(--bg);
+    border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+  textarea{resize:vertical;min-height:76px}
+  textarea:focus,input:focus{outline:2px solid var(--accent);outline-offset:1px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-weight:600;
+    padding:10px 15px;border-radius:10px;cursor:pointer;min-height:44px}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent}
+  .btn.ghost{background:transparent}
+  .btn.tiny{min-height:auto;padding:5px 10px;font-size:13px}
+  .btn.danger{color:var(--danger)}
+
+  .entry{border-top:1px solid var(--line);padding:13px 0;display:flex;gap:12px}
+  .entry:first-of-type{border-top:0}
+  .entry .when{color:var(--muted);font-size:12px;min-width:82px;flex-shrink:0;padding-top:2px}
+  .entry .body{flex:1;min-width:0}
+  .entry .text{white-space:pre-wrap;word-wrap:break-word}
+  .entry .chips{margin-top:6px}
+  .chip{display:inline-block;background:var(--chip);border:1px solid var(--line);border-radius:999px;
+    padding:2px 9px;font-size:12px;color:var(--muted);margin:3px 4px 0 0}
+  .kind{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--accent)}
+  .empty{color:var(--muted);text-align:center;padding:26px 8px;font-size:14px}
+  .muted{color:var(--muted)}
+  .stat{display:flex;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line)}
+  .stat:first-child{border-top:0}
+  .stat b{font-variant-numeric:tabular-nums}
+  footer{color:var(--muted);font-size:12.5px;text-align:center;padding:8px 0 0;line-height:1.7}
+  .kbd{font:12px ui-monospace,Menlo,Consolas,monospace;background:var(--chip);border:1px solid var(--line);
+    border-radius:6px;padding:1px 6px}
+  label.field{display:block;font-size:13px;font-weight:600;color:var(--muted);margin:0 0 5px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  @media (max-width:480px){.grid2{grid-template-columns:1fr}}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(20px);opacity:0;
+    background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;font-weight:600;
+    transition:.25s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .hide{display:none !important}
+  a.skip{position:absolute;left:-999px;top:0}
+  a.skip:focus{left:8px;top:8px;background:var(--accent);color:var(--accent-ink);padding:8px 12px;border-radius:8px;z-index:99}
+</style>
+</head>
+<body>
+<a href="#main" class="skip">Skip to content</a>
+<div class="wrap">
+  <header>
+    <div class="logo"><span class="dot"></span>OneFile</div>
+    <div class="tag">your life in a file you own</div>
+    <div class="badge" title="OneFile makes zero network requests. Your data never leaves this device.">
+      <span class="live" aria-hidden="true"></span><span id="netlabel">0 servers contacted</span>
+    </div>
+  </header>
+
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" aria-selected="true" data-view="today">Today</button>
+    <button role="tab" aria-selected="false" data-view="threads">Threads</button>
+    <button role="tab" aria-selected="false" data-view="timeline">Timeline</button>
+    <button role="tab" aria-selected="false" data-view="you">You &amp; Data</button>
+  </nav>
+
+  <main id="main">
+    <!-- TODAY: quick capture -->
+    <section id="view-today">
+      <div class="card">
+        <h2>Capture</h2>
+        <textarea id="capture" placeholder="What happened, what's on your mind, a decision, a metric… (⌘/Ctrl + Enter to save)" aria-label="Capture something"></textarea>
+        <div class="row" style="margin-top:10px">
+          <select id="kind" aria-label="Type of entry" style="width:auto;flex:0 0 auto">
+            <option value="note">Note</option>
+            <option value="decision">Decision</option>
+            <option value="person">Person</option>
+            <option value="health">Health</option>
+            <option value="win">Win</option>
+          </select>
+          <input id="tags" placeholder="tags (comma separated)" style="flex:1 1 160px;width:auto" aria-label="Tags" />
+          <button class="btn primary" id="save">Save</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Recent</h2>
+        <div id="recent"></div>
+      </div>
+    </section>
+
+    <!-- THREADS: entries grouped by tag -->
+    <section id="view-threads" class="hide">
+      <div class="card">
+        <h2>Threads · things you keep coming back to</h2>
+        <div id="threads"></div>
+      </div>
+    </section>
+
+    <!-- TIMELINE: everything, newest first -->
+    <section id="view-timeline" class="hide">
+      <div class="card">
+        <div class="row" style="margin-bottom:10px">
+          <input id="search" placeholder="Search everything…" aria-label="Search entries" style="flex:1" />
+        </div>
+        <h2 id="tl-count">Timeline</h2>
+        <div id="timeline"></div>
+      </div>
+    </section>
+
+    <!-- YOU & DATA: sovereignty controls -->
+    <section id="view-you" class="hide">
+      <div class="card">
+        <h2>Your file, your rules</h2>
+        <p class="muted" style="margin-top:0">Everything you write lives only in <b>this browser, on this device</b>. Nothing is uploaded. Back it up whenever you want — the backup is a plain file you keep forever, readable without any app.</p>
+        <div class="grid2">
+          <button class="btn primary" id="export">⬇ Back up (export .json)</button>
+          <button class="btn" id="importBtn">⬆ Restore (import .json)</button>
+          <input type="file" id="importFile" accept="application/json" class="hide" />
+          <button class="btn" id="print">🖨 Print / Save as PDF</button>
+          <button class="btn danger" id="wipe">🗑 Erase everything</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>What's inside</h2>
+        <div class="stat"><span>Entries</span><b id="s-count">0</b></div>
+        <div class="stat"><span>Threads (tags)</span><b id="s-tags">0</b></div>
+        <div class="stat"><span>First entry</span><b id="s-first">—</b></div>
+        <div class="stat"><span>Storage used</span><b id="s-size">0 KB</b></div>
+        <div class="stat"><span>Servers contacted, ever</span><b style="color:var(--good)">0</b></div>
+      </div>
+      <div class="card">
+        <h2>Why this exists</h2>
+        <p class="muted" style="margin:0">Most apps keep your life on someone else's computer. OneFile keeps it on yours. No account, no cloud, no lock-in — sovereignty isn't a promise in a privacy policy, it's the architecture. If you can open this file, you own your data. Forever.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    OneFile · offline-first · no accounts · no tracking · <a href="https://github.com/LifeAtlas/onefile" rel="noopener">open source (MIT)</a><br/>
+    Tip: <span class="kbd">⌘/Ctrl</span> + <span class="kbd">Enter</span> to save · This page never phones home.
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+  const KEY = "onefile.v1";
+  const $ = s => document.querySelector(s);
+  const $$ = s => Array.from(document.querySelectorAll(s));
+
+  // ---------- state ----------
+  let state = load();
+  function load(){
+    try{ const raw = localStorage.getItem(KEY); if(raw) return JSON.parse(raw); }catch(e){ console.debug("load failed", e); }
+    return { created: Date.now(), entries: [] };
+  }
+  let saveTimer=null;
+  function persist(){
+    clearTimeout(saveTimer);
+    saveTimer=setTimeout(()=>{ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){ console.debug("persist failed",e); toast("⚠ Could not save (storage full?)"); } }, 120);
+  }
+
+  // ---------- helpers ----------
+  const KIND_LABEL = {note:"Note",decision:"Decision",person:"Person",health:"Health",win:"Win"};
+  function uid(){ return (state.entries.length? state.entries[0].id+1 : 1); }
+  function esc(s){ const d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
+  function parseTags(s){ return (s||"").split(",").map(t=>t.trim().toLowerCase()).filter(Boolean); }
+  function fmtWhen(ts){
+    const d=new Date(ts), now=new Date();
+    const sameDay = d.toDateString()===now.toDateString();
+    const time = d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+    if(sameDay) return "Today · "+time;
+    const yest = new Date(now); yest.setDate(now.getDate()-1);
+    if(d.toDateString()===yest.toDateString()) return "Yesterday · "+time;
+    return d.toLocaleDateString([], {month:"short",day:"numeric",year: d.getFullYear()!==now.getFullYear()?"numeric":undefined}) + " · " + time;
+  }
+  let toastTimer=null;
+  function toast(msg){
+    const t=$("#toast"); t.textContent=msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove("show"),1900);
+  }
+
+  // ---------- render ----------
+  function entryHTML(e){
+    const chips = (e.tags||[]).map(t=>`<span class="chip">#${esc(t)}</span>`).join("");
+    return `<div class="entry" data-id="${e.id}">
+      <div class="when">${esc(fmtWhen(e.ts))}</div>
+      <div class="body">
+        <div class="kind">${esc(KIND_LABEL[e.kind]||"Note")}</div>
+        <div class="text">${esc(e.text)}</div>
+        <div class="chips">${chips}</div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn tiny ghost act-del" data-id="${e.id}">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }
+  function renderRecent(){
+    const el=$("#recent"), items=state.entries.slice(0,8);
+    el.innerHTML = items.length ? items.map(entryHTML).join("") : `<div class="empty">Nothing yet. Write your first line above — it stays on this device.</div>`;
+  }
+  function renderTimeline(){
+    const q=($("#search").value||"").toLowerCase().trim();
+    let items=state.entries;
+    if(q) items=items.filter(e=> (e.text||"").toLowerCase().includes(q) || (e.tags||[]).some(t=>t.includes(q)) || (KIND_LABEL[e.kind]||"").toLowerCase().includes(q));
+    $("#tl-count").textContent = q ? `${items.length} match${items.length===1?"":"es"}` : "Timeline · "+items.length;
+    $("#timeline").innerHTML = items.length ? items.map(entryHTML).join("") : `<div class="empty">No entries${q?" match your search":""}.</div>`;
+  }
+  function renderThreads(){
+    const map={};
+    state.entries.forEach(e=> (e.tags||[]).forEach(t=>{ (map[t]=map[t]||[]).push(e); }));
+    const tags=Object.keys(map).sort((a,b)=>map[b].length-map[a].length);
+    const el=$("#threads");
+    if(!tags.length){ el.innerHTML=`<div class="empty">Add <b>tags</b> when you capture (e.g. <span class="chip">#health</span> <span class="chip">#dean</span>) and they become threads you can follow over time.</div>`; return; }
+    el.innerHTML = tags.map(t=>{
+      const list=map[t];
+      const rows=list.slice(0,3).map(e=>`<div class="entry"><div class="when">${esc(fmtWhen(e.ts))}</div><div class="body"><div class="text">${esc(e.text)}</div></div></div>`).join("");
+      const more=list.length>3?`<div class="muted" style="font-size:12.5px;margin-top:6px">+${list.length-3} more — search <span class="chip">#${esc(t)}</span> in Timeline</div>`:"";
+      return `<div style="margin-bottom:18px"><div class="row" style="justify-content:space-between"><b>#${esc(t)}</b><span class="muted" style="font-size:12.5px">${list.length} entr${list.length===1?"y":"ies"}</span></div>${rows}${more}</div>`;
+    }).join("");
+  }
+  function renderStats(){
+    $("#s-count").textContent = state.entries.length;
+    const tags=new Set(); state.entries.forEach(e=>(e.tags||[]).forEach(t=>tags.add(t)));
+    $("#s-tags").textContent = tags.size;
+    const last = state.entries[state.entries.length-1];
+    $("#s-first").textContent = last ? new Date(last.ts).toLocaleDateString() : "—";
+    let bytes=0; try{ bytes=new Blob([localStorage.getItem(KEY)||""]).size; }catch(e){ bytes=(localStorage.getItem(KEY)||"").length; }
+    $("#s-size").textContent = bytes<1024 ? bytes+" B" : (bytes/1024).toFixed(1)+" KB";
+  }
+  function renderAll(){ renderRecent(); renderTimeline(); renderThreads(); renderStats(); }
+
+  // ---------- actions ----------
+  function addEntry(){
+    const text=$("#capture").value.trim();
+    if(!text){ $("#capture").focus(); return; }
+    state.entries.unshift({ id:uid(), ts:Date.now(), kind:$("#kind").value, text, tags:parseTags($("#tags").value) });
+    $("#capture").value=""; $("#tags").value="";
+    persist(); renderAll(); toast("Saved to this device"); $("#capture").focus();
+  }
+  function delEntry(id){
+    state.entries = state.entries.filter(e=>e.id!==id);
+    persist(); renderAll(); toast("Deleted");
+  }
+
+  // ---------- sovereignty: export / import / print / wipe ----------
+  function pad(n){ return String(n).padStart(2,"0"); }
+  function stamp(){ const d=new Date(); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; }
+  function exportJSON(){
+    const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+    const url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url; a.download=`onefile-backup-${stamp()}.json`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    toast("Backup downloaded — that file is yours");
+  }
+  function importJSON(file){
+    const r=new FileReader();
+    r.onload=()=>{
+      try{
+        const data=JSON.parse(r.result);
+        if(!data||!Array.isArray(data.entries)) throw new Error("Not a OneFile backup");
+        if(!confirm(`Restore ${data.entries.length} entries? This replaces what's here now.`)) return;
+        state=data; persist(); renderAll(); toast("Restored");
+      }catch(e){ console.debug("import failed",e); toast("⚠ That doesn't look like a OneFile backup"); }
+    };
+    r.readAsText(file);
+  }
+  function wipe(){
+    if(!confirm("Erase every entry on this device? Back up first if you want to keep anything. This cannot be undone.")) return;
+    state={ created:Date.now(), entries:[] };
+    persist(); renderAll(); toast("Everything erased");
+  }
+
+  // ---------- views ----------
+  function show(view){
+    $$("nav button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.view===view)));
+    ["today","threads","timeline","you"].forEach(v=> $("#view-"+v).classList.toggle("hide", v!==view));
+    if(view==="threads") renderThreads();
+    if(view==="timeline") renderTimeline();
+    if(view==="you") renderStats();
+  }
+
+  // ---------- proof: watch for any network attempt (there should be none) ----------
+  let netCount=0;
+  function flagNet(){ netCount++; $("#netlabel").textContent = netCount+" server request"+(netCount>1?"s":"")+" (unexpected!)"; }
+  const _fetch=window.fetch; window.fetch=function(){ flagNet(); return _fetch.apply(this,arguments); };
+  const _open=XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open=function(){ flagNet(); return _open.apply(this,arguments); };
+
+  // ---------- wire up ----------
+  $("#save").addEventListener("click", addEntry);
+  $("#capture").addEventListener("keydown", e=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter") addEntry(); });
+  document.addEventListener("click", e=>{ const d=e.target.closest(".act-del"); if(d) delEntry(Number(d.dataset.id)); });
+  $("#search").addEventListener("input", renderTimeline);
+  $$("nav button").forEach(b=> b.addEventListener("click", ()=>show(b.dataset.view)));
+  $("#export").addEventListener("click", exportJSON);
+  $("#importBtn").addEventListener("click", ()=>$("#importFile").click());
+  $("#importFile").addEventListener("change", e=>{ if(e.target.files[0]) importJSON(e.target.files[0]); e.target.value=""; });
+  $("#print").addEventListener("click", ()=>window.print());
+  $("#wipe").addEventListener("click", wipe);
+
+  renderAll();
+})();
+</script>
+</body>
+</html>
